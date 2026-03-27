@@ -12,7 +12,7 @@ import (
 var interval int
 
 var watchCmd = &cobra.Command{
-	Use: "Watch [url]",
+	Use: "watch [url]",
 	Short: "Poll a URL repeadetly until stopped",
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
