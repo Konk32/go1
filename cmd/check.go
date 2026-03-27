@@ -5,33 +5,76 @@ import (
     "net/http"
     "os"
     "time"
+    "sync"
 
     "github.com/spf13/cobra"
 )
 
 var timeout int
 
-var checkCmd = &cobra.Command{
-    Use:   "check <url>",
-    Short: "Check if a URL responds",
-    Args:  cobra.ExactArgs(1),
-    Run: func(cmd *cobra.Command, args []string) {
-        url := args[0]
-        fmt.Printf("Checking %s (timeout: %ds)...\n", url, timeout)
+type Result struct {
+    URL        string
+    StatusCode int
+    StatusText string
+    Elapsed    time.Duration
+    Err        error
+}
 
+var checkCmd = &cobra.Command{
+    Use:   "check <url> [url...]",
+    Short: "Check if one or more URLs respond",
+    Args:  cobra.MinimumNArgs(1),
+    Run: func(cmd *cobra.Command, args []string) {
         client := &http.Client{
             Timeout: time.Duration(timeout) * time.Second,
         }
 
-        resp, err := client.Get(url)
-        if err != nil {
-            fmt.Printf("Error: %v\n", err)
-            os.Exit(1)
-        }
-        defer resp.Body.Close()
+        results := make(chan Result, len(args))
+        var wg sync.WaitGroup
 
-        fmt.Printf("Status: %d %s\n", resp.StatusCode, http.StatusText(resp.StatusCode))
+        for _, url:= range args {
+            wg.Add(1)
+            go func(u string) {
+                defer wg.Done()
+                results <- checkURL(client, u)
+            }(url)
+        }
+
+        // Close the channel once all goroutines finish
+        go func() {
+            wg.Wait()
+            close(results)
+        }()
+
+        for result := range results {
+            if result.Err != nil {
+                fmt.Printf("%-35s ERROR — %v\n", result.URL, result.Err)
+                continue
+            }
+            fmt.Printf("%-35s %d %s — %dms\n",
+                result.URL,
+                result.StatusCode,
+                result.StatusText,
+                result.Elapsed.Milliseconds(),
+            )
+        }
     },
+}
+func checkURL(client *http.Client, url string) Result {
+    start := time.Now()
+
+    resp, err := client.Get(url)
+    if err != nil {
+        return Result{URL: url, Err: err}
+    }
+    defer resp.Body.Close()
+
+    return Result{
+        URL:        url,
+        StatusCode: resp.StatusCode,
+        StatusText: http.StatusText(resp.StatusCode),
+        Elapsed:    time.Since(start),
+    }
 }
 
 func init() {
