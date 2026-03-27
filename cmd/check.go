@@ -3,7 +3,6 @@ package cmd
 import (
     "fmt"
     "net/http"
-    "os"
     "time"
     "sync"
 
